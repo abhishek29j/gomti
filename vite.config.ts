@@ -11,7 +11,7 @@ const isGithubPages = process.env.GITHUB_PAGES === "true";
 export default defineConfig({
   base: isGithubPages ? "/gomti/" : "/",
   build: {
-    outDir: "dist",
+    outDir: ".output",
     emptyOutDir: true,
   },
   nitro: {
