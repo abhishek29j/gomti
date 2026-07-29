@@ -254,8 +254,10 @@ async function handleLeadSubmission(request: Request, runtimeEnv: unknown): Prom
     let resendSuccess = false;
     let sendGridSuccess = false;
     const methods: string[] = [];
+    const attemptedMethods: string[] = [];
 
     if (resendConfigured) {
+      attemptedMethods.push("resend");
       try {
         await sendLeadViaResend(details, resendApiKey!, fromAddress, targetEmail);
         resendSuccess = true;
@@ -263,9 +265,12 @@ async function handleLeadSubmission(request: Request, runtimeEnv: unknown): Prom
       } catch (error) {
         console.error("Lead email delivery failed with Resend", error);
       }
+    } else {
+      console.warn("Resend email not sent because Resend is not configured.");
     }
 
     if (!resendSuccess && smtpConfigured) {
+      attemptedMethods.push("smtp");
       try {
         await sendLeadViaSmtp(
           details,
@@ -283,6 +288,7 @@ async function handleLeadSubmission(request: Request, runtimeEnv: unknown): Prom
     }
 
     if (!resendSuccess && !smtpSuccess && sendGridConfigured) {
+      attemptedMethods.push("sendgrid");
       try {
         await sendLeadViaSendGrid(details, sendGridApiKey!, fromAddress, targetEmail);
         sendGridSuccess = true;
@@ -293,16 +299,24 @@ async function handleLeadSubmission(request: Request, runtimeEnv: unknown): Prom
     }
 
     if (smtpSuccess || resendSuccess || sendGridSuccess) {
-      return new Response(JSON.stringify({ success: true, delivered: true, methods }), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ success: true, delivered: true, methods, attemptedMethods }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      );
     }
 
     await persistLead(payload);
 
     return new Response(
-      JSON.stringify({ success: true, fallback: true, message: "Lead captured successfully. We will follow up shortly." }),
+      JSON.stringify({
+        success: true,
+        fallback: true,
+        message: "Lead captured successfully. We will follow up shortly.",
+        debug: { attemptedMethods, methods, smtpConfigured, resendConfigured, sendGridConfigured },
+      }),
       {
         status: 200,
         headers: { "content-type": "application/json" },
