@@ -300,7 +300,13 @@ async function handleLeadSubmission(request: Request, runtimeEnv: unknown): Prom
 
     if (smtpSuccess || resendSuccess || sendGridSuccess) {
       return new Response(
-        JSON.stringify({ success: true, delivered: true, methods, attemptedMethods }),
+        JSON.stringify({
+          success: true,
+          delivered: true,
+          methods,
+          attemptedMethods,
+          debug: { smtpConfigured, resendConfigured, sendGridConfigured },
+        }),
         {
           status: 200,
           headers: { "content-type": "application/json" },
