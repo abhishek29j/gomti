@@ -256,20 +256,7 @@ async function handleLeadSubmission(request: Request, runtimeEnv: unknown): Prom
     const methods: string[] = [];
     const attemptedMethods: string[] = [];
 
-    if (resendConfigured) {
-      attemptedMethods.push("resend");
-      try {
-        await sendLeadViaResend(details, resendApiKey!, fromAddress, targetEmail);
-        resendSuccess = true;
-        methods.push("resend");
-      } catch (error) {
-        console.error("Lead email delivery failed with Resend", error);
-      }
-    } else {
-      console.warn("Resend email not sent because Resend is not configured.");
-    }
-
-    if (!resendSuccess && smtpConfigured) {
+    if (smtpConfigured) {
       attemptedMethods.push("smtp");
       try {
         await sendLeadViaSmtp(
@@ -283,11 +270,24 @@ async function handleLeadSubmission(request: Request, runtimeEnv: unknown): Prom
       } catch (error) {
         console.error("Lead email delivery failed with SMTP", error);
       }
-    } else if (!resendSuccess) {
-      console.warn("Lead email not sent because SMTP credentials are not configured.");
+    } else {
+      console.warn("SMTP email not sent because SMTP credentials are not configured.");
     }
 
-    if (!resendSuccess && !smtpSuccess && sendGridConfigured) {
+    if (!smtpSuccess && resendConfigured) {
+      attemptedMethods.push("resend");
+      try {
+        await sendLeadViaResend(details, resendApiKey!, fromAddress, targetEmail);
+        resendSuccess = true;
+        methods.push("resend");
+      } catch (error) {
+        console.error("Lead email delivery failed with Resend", error);
+      }
+    } else if (!smtpSuccess) {
+      console.warn("Resend email not sent because Resend is not configured.");
+    }
+
+    if (!smtpSuccess && !resendSuccess && sendGridConfigured) {
       attemptedMethods.push("sendgrid");
       try {
         await sendLeadViaSendGrid(details, sendGridApiKey!, fromAddress, targetEmail);
