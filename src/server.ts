@@ -8,6 +8,14 @@ import { Resend } from "resend";
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
 
+// Environment variables supported by the lead submission backend:
+//   SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_SECURE
+//   SMTP_FROM
+//   RESEND_API_KEY, RESEND_FROM
+//   SENDGRID_API_KEY, SENDGRID_FROM
+//   LEAD_EMAIL_TO
+// Put these in your production environment or a .env file at the project root.
+
 dotenv.config();
 
 type ServerEntry = {
@@ -218,22 +226,26 @@ async function handleLeadSubmission(request: Request, runtimeEnv: unknown): Prom
     const smtpPass = getRuntimeEnvValue("SMTP_PASS", runtimeEnv);
     const smtpSecureValue = getRuntimeEnvValue("SMTP_SECURE", runtimeEnv);
     const resendApiKey = getRuntimeEnvValue("RESEND_API_KEY", runtimeEnv);
+    const resendFrom = getRuntimeEnvValue("RESEND_FROM", runtimeEnv);
     const sendGridApiKey = getRuntimeEnvValue("SENDGRID_API_KEY", runtimeEnv);
+    const sendGridFrom = getRuntimeEnvValue("SENDGRID_FROM", runtimeEnv);
     const targetEmail = getRuntimeEnvValue("LEAD_EMAIL_TO", runtimeEnv) || "abhishek9621444444@gmail.com";
     const fromAddress =
       getRuntimeEnvValue("SMTP_FROM", runtimeEnv) ||
-      getRuntimeEnvValue("SENDGRID_FROM", runtimeEnv) ||
-      getRuntimeEnvValue("RESEND_FROM", runtimeEnv) ||
+      sendGridFrom ||
+      resendFrom ||
       "onboarding@resend.dev";
 
     const smtpPort = smtpPortValue ? Number(smtpPortValue) : undefined;
     const smtpSecure = smtpSecureValue === "true";
     const smtpConfigured = Boolean(smtpHost && smtpPort && smtpUser && smtpPass);
+    const resendConfigured = Boolean(resendApiKey && resendFrom);
+    const sendGridConfigured = Boolean(sendGridApiKey && sendGridFrom);
 
     console.log("Lead submission runtime env", {
       hasSmtp: smtpConfigured,
-      hasResendApiKey: Boolean(resendApiKey),
-      hasSendGridApiKey: Boolean(sendGridApiKey),
+      hasResend: resendConfigured,
+      hasSendGrid: sendGridConfigured,
       targetEmail,
       fromAddress,
     });
@@ -243,7 +255,17 @@ async function handleLeadSubmission(request: Request, runtimeEnv: unknown): Prom
     let sendGridSuccess = false;
     const methods: string[] = [];
 
-    if (smtpConfigured) {
+    if (resendConfigured) {
+      try {
+        await sendLeadViaResend(details, resendApiKey!, fromAddress, targetEmail);
+        resendSuccess = true;
+        methods.push("resend");
+      } catch (error) {
+        console.error("Lead email delivery failed with Resend", error);
+      }
+    }
+
+    if (!resendSuccess && smtpConfigured) {
       try {
         await sendLeadViaSmtp(
           details,
@@ -256,23 +278,13 @@ async function handleLeadSubmission(request: Request, runtimeEnv: unknown): Prom
       } catch (error) {
         console.error("Lead email delivery failed with SMTP", error);
       }
-    } else {
+    } else if (!resendSuccess) {
       console.warn("Lead email not sent because SMTP credentials are not configured.");
     }
 
-    if (!smtpSuccess && resendApiKey) {
+    if (!resendSuccess && !smtpSuccess && sendGridConfigured) {
       try {
-        await sendLeadViaResend(details, resendApiKey, fromAddress, targetEmail);
-        resendSuccess = true;
-        methods.push("resend");
-      } catch (error) {
-        console.error("Lead email delivery failed with Resend", error);
-      }
-    }
-
-    if (!smtpSuccess && !resendSuccess && sendGridApiKey) {
-      try {
-        await sendLeadViaSendGrid(details, sendGridApiKey, fromAddress, targetEmail);
+        await sendLeadViaSendGrid(details, sendGridApiKey!, fromAddress, targetEmail);
         sendGridSuccess = true;
         methods.push("sendgrid");
       } catch (error) {
